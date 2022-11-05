@@ -1,3 +1,15 @@
+#include <opencv2/core/core.hpp>
+#include <opencv2/opencv.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <math.h>
+#include <eigen3/Eigen/Dense>
+#include <chrono>
+
+using namespace std;
+using namespace cv;
+using namespace Eigen;
+using namespace std::chrono;
 vector<double> convolution(const cv::Mat& image, const vector<cv::KeyPoint>& pts, const cv::Mat& kernal)
 {
     double pixSum = 0;
@@ -6,7 +18,7 @@ vector<double> convolution(const cv::Mat& image, const vector<cv::KeyPoint>& pts
     {
         int row = floor(pts[i].pt.y);
         int col = floor(pts[i].pt.x);
-        //这个像素在卷积核的中心处
+        //the pixel locates in the middle of the kernal 
         for (int k = 0; k < kernal.rows; k++) 
             for (int l = 0; l < kernal.cols; l++)
                 pixSum += kernal.at<double>(k, l)*double(image.at<uchar>(k+row-1, l+col-1));
@@ -32,7 +44,7 @@ void efficientGoodFeaturesToTrack(InputArray _image, vector<cv::Point2f>& have_c
         return;
 
     vector<cv::KeyPoint> keypoints;
-    cv::FAST(image, keypoints, 50, true);
+    cv::FAST(image, keypoints, 20, true);
 
     if(keypoints.empty())
         return;
@@ -54,7 +66,7 @@ void efficientGoodFeaturesToTrack(InputArray _image, vector<cv::Point2f>& have_c
         cov(1, 0) = grad_x[i] * grad_y[i];
         cov(1, 1) = grad_y[i] * grad_y[i];
 
-        eigenSolver<Matrix2d> es(cov);
+        EigenSolver<Matrix2d> es(cov);
         Eigen::Vector2cd eig_ = es.eigenvalues();
         Vector2d eig = eig_.real();
         double eg1 = eig(0);
@@ -84,7 +96,7 @@ void efficientGoodFeaturesToTrack(InputArray _image, vector<cv::Point2f>& have_c
         std::vector<std::vector<cv::Point2f>> grid(grid_width * grid_height);
 
         minDistance *= minDistance;
-        //先把之前跟踪到的点放入grid
+        //push the already exist feature points into the grid
         for(int i = 0; i < have_corners.size(); i++)
         {
             int y = (int)(have_corners[i].y);
@@ -102,12 +114,12 @@ void efficientGoodFeaturesToTrack(InputArray _image, vector<cv::Point2f>& have_c
 
         for(int i = 0; i < keypoints_.size(); i++)
         {
-            if(have_corners[i].y < 0 || have_corners[i].y > image.rows - 1)
+            if(keypoints_[i].pt.y < 0 || keypoints_[i].pt.y > image.rows - 1)
                 continue;
-            if(have_corners[i].x < 0 || have_corners[i].x > image.cols - 1)
+            if(keypoints_[i].pt.x < 0 || keypoints_[i].pt.x > image.cols - 1)
                 continue;    
-            int y = (int)(have_corners[i].y);
-            int x = (int)(have_corners[i].x);
+            int y = (int)(keypoints_[i].pt.y);
+            int x = (int)(keypoints_[i].pt.x);
 
             bool good = true;
 
@@ -125,7 +137,7 @@ void efficientGoodFeaturesToTrack(InputArray _image, vector<cv::Point2f>& have_c
             x2 = std::min(grid_width-1, x2);
             y2 = std::min(grid_height-1, y2);
 
-            //遍历当前点的上下左右grid， 有一个格子距离小于阈值即为false
+            //select feature points satisfy minDistance threshold
             for(int yy = y1; yy <= y2; yy++)
             {
                 for(int xx = x1; xx <= x2; xx++)
@@ -173,3 +185,38 @@ void efficientGoodFeaturesToTrack(InputArray _image, vector<cv::Point2f>& have_c
         corners.erase(corners.begin(), corners.end()+have_corners.size());
     
 }
+
+int main()
+{
+	vector<cv::Point2f> forw_pts, n_pts;
+	cv::Mat img_ = cv::imread("test.jpg", CV_LOAD_IMAGE_UNCHANGED);
+	cv::Mat img = cv::imread("test.jpg", 0);
+	cv::Mat mask = cv::Mat(img.rows, img.cols, CV_8UC1, cv::Scalar(255));
+	system_clock::time_point t1 = std::chrono::system_clock::now();
+	cv::goodFeaturesToTrack(img, n_pts, 200, 0.01, 30, mask);
+	system_clock::time_point t2 = std::chrono::system_clock::now();
+	std::cout <<"goodFeaturesToTrack() time " << fixed << setprecision(6) << duration_cast<milliseconds>(t2 - t1).count() << " ms" << std::endl;
+        for(int i = 0; i < n_pts.size(); i++)
+	{
+	    cv::circle(img_, n_pts[i], 2, Scalar(0, 0, 255), 2);
+        }	    
+	system_clock::time_point t3 = std::chrono::system_clock::now();
+	efficientGoodFeaturesToTrack(img, forw_pts, n_pts, 200, 30);
+	system_clock::time_point t4 = std::chrono::system_clock::now();
+	std::cout << "efficientGoodFeaturesToTrack time " << fixed << setprecision(6) << duration_cast<milliseconds>(t4 - t3).count() << " ms" << std::endl;
+        for(int i = 0; i < n_pts.size(); i++)
+	{
+	    cv::circle(img_, n_pts[i], 2, Scalar(255, 0, 0), 2);
+	}
+	cv::imwrite("cmp.jpg", img_);
+
+	return 0;
+
+
+
+
+
+
+
+
+}	
